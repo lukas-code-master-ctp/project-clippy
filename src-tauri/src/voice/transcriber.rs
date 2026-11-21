@@ -54,6 +54,8 @@ impl Transcriber {
             audio
         };
 
+        params.set_audio_ctx(audio_ctx_for(input.len()));
+
         state.full(params, input).context("falló la transcripción")?;
         let mut text = String::new();
         for segment in state.as_iter() {
@@ -61,6 +63,16 @@ impl Transcriber {
         }
         Ok(clean(&text))
     }
+}
+
+/// Whisper siempre codifica una ventana de 30 s (1500 posiciones), aunque el comando dure 3.
+/// Achicar el contexto al largo real del audio (50 posiciones por segundo, más margen)
+/// acelera varias veces la transcripción de frases cortas, con una pérdida de precisión mínima.
+pub fn audio_ctx_for(samples: usize) -> i32 {
+    const FULL: i32 = 1500;
+    const MARGIN: i32 = 128;
+    let seconds = samples as f32 / 16_000.0;
+    ((seconds * 50.0).ceil() as i32 + MARGIN).min(FULL)
 }
 
 /// Quita espacios sobrantes y las etiquetas que Whisper inventa en el silencio.
@@ -76,7 +88,13 @@ pub fn clean(raw: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::clean;
+    use super::{audio_ctx_for, clean};
+
+    #[test]
+    fn audio_ctx_crece_con_el_audio_y_tiene_tope() {
+        assert_eq!(audio_ctx_for(16_000 * 4), 200 + 128);
+        assert_eq!(audio_ctx_for(16_000 * 60), 1500);
+    }
 
     #[test]
     fn clean_normaliza_espacios_y_descarta_silencio() {
