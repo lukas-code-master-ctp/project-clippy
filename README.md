@@ -13,6 +13,12 @@ Mascota de escritorio con comandos de voz. App de escritorio hecha con Tauri 2 (
 
 El núcleo en Rust es la fuente de verdad del estado (`src-tauri/src/pet.rs`). La interfaz solo lo dibuja escuchando el evento `pet-state`. Así, el agente de voz podrá mover a Brote desde Rust sin tocar la interfaz.
 
+## Probarlo en Windows sin instalar nada
+
+Cada cambio en `main` compila el instalador en GitHub Actions. Entra a la pestaña **Actions** del repo, abre la última ejecución de "Instalador de Windows" y descarga el artefacto `brote-windows`. Trae un `.exe` (instalador) y un `.msi`.
+
+Como el instalador todavía no está firmado, Windows SmartScreen puede advertir al abrirlo: elige "Más información" y luego "Ejecutar de todas formas".
+
 ## Requisitos
 
 - [Node.js](https://nodejs.org) 20 o superior
