@@ -1,18 +1,26 @@
+mod bubble;
 mod pet;
+mod voice;
 
+use bubble::BubbleKind;
 use pet::{Pet, PetState};
 use std::time::Duration;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, PhysicalPosition, WebviewWindow,
+    AppHandle, Manager, PhysicalPosition, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use voice::model::{self, ModelState, ModelStatus};
+use voice::recorder::Recorder;
+use voice::transcriber::Transcriber;
 
 /// Margen respecto al borde de la pantalla al aparecer.
 const SCREEN_MARGIN: f64 = 24.0;
 /// Tamaño lógico de la ventana (igual que en tauri.conf.json).
 const PET_SIZE: f64 = 200.0;
+/// Cuánto se queda visible lo que Brote entendió.
+const HEARD_TTL: Duration = Duration::from_secs(8);
 
 #[tauri::command]
 fn get_state(pet: tauri::State<Pet>) -> PetState {
@@ -32,6 +40,7 @@ fn cycle_state(app: AppHandle) {
 
 #[tauri::command]
 fn hide_pet(app: AppHandle) {
+    bubble::hide(&app);
     if let Some(w) = app.get_webview_window("pet") {
         let _ = w.hide();
     }
@@ -45,6 +54,7 @@ fn quit_app(app: AppHandle) {
 fn toggle_visibility(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("pet") {
         if w.is_visible().unwrap_or(false) {
+            bubble::hide(app);
             let _ = w.hide();
         } else {
             let _ = w.show();
@@ -68,24 +78,141 @@ fn place_bottom_right(window: &WebviewWindow) {
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
-/// Demo del flujo de voz mientras no existe el agente: mantener la tecla = escuchando;
-/// al soltar, pasa por pensando, trabajando y listo, y vuelve a dormir.
-/// Si el estado cambia por otro lado a mitad de camino, la secuencia se detiene.
-fn run_demo_sequence(app: AppHandle) {
+/// Vuelve a dormir después de `delay`, salvo que el estado haya cambiado entretanto.
+fn sleep_after(app: &AppHandle, generation: u64, delay: Duration) {
+    let app = app.clone();
     std::thread::spawn(move || {
-        let steps = [
-            (PetState::Thinking, 1400),
-            (PetState::Working, 1800),
-            (PetState::Done, 1600),
-            (PetState::Sleeping, 0),
-        ];
-        let mut generation = pet::set(&app, steps[0].0);
-        for window in steps.windows(2) {
-            std::thread::sleep(Duration::from_millis(window[0].1));
-            if app.state::<Pet>().generation() != generation {
-                return;
+        std::thread::sleep(delay);
+        if app.state::<Pet>().generation() == generation {
+            pet::set(&app, PetState::Sleeping);
+        }
+    });
+}
+
+/// Tecla presionada: empieza a escuchar si el modelo está listo.
+fn on_talk_pressed(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("pet") {
+        let _ = w.show();
+    }
+    let recorder = app.state::<Recorder>();
+    if recorder.is_recording() {
+        return;
+    }
+    match model::status(app) {
+        ModelStatus::Ready => {}
+        ModelStatus::Downloading { percent } => {
+            let msg = format!("Todavía estoy bajando mi modelo de voz ({percent}%). Dame un momento.");
+            bubble::show(app, &msg, BubbleKind::Info, Some(Duration::from_secs(4)));
+            return;
+        }
+        ModelStatus::Failed { .. } | ModelStatus::Missing => {
+            bubble::show(app, "No tengo el modelo de voz. Lo intento bajar de nuevo.", BubbleKind::Error, Some(Duration::from_secs(5)));
+            start_model_download(app.clone());
+            return;
+        }
+    }
+    match recorder.start() {
+        Ok(()) => {
+            bubble::hide(app);
+            pet::set(app, PetState::Listening);
+        }
+        Err(e) => {
+            eprintln!("Micrófono: {e:#}");
+            bubble::show(
+                app,
+                "No pude usar el micrófono. Revisa que esté conectado y que el sistema le dé permiso a Brote.",
+                BubbleKind::Error,
+                Some(Duration::from_secs(6)),
+            );
+            pet::set(app, PetState::Sleeping);
+        }
+    }
+}
+
+/// Tecla soltada: deja de grabar y transcribe en segundo plano.
+fn on_talk_released(app: &AppHandle) {
+    let recorder = app.state::<Recorder>();
+    if !recorder.is_recording() {
+        return;
+    }
+    let audio = match recorder.stop() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("Grabación: {e:#}");
+            bubble::show(app, "Se cortó la grabación. ¿Lo intentamos de nuevo?", BubbleKind::Error, Some(Duration::from_secs(6)));
+            pet::set(app, PetState::Sleeping);
+            return;
+        }
+    };
+    if audio.len() < voice::MIN_SPEECH_SAMPLES {
+        pet::set(app, PetState::Sleeping);
+        return;
+    }
+    pet::set(app, PetState::Thinking);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        let result = model::model_path(&app).and_then(|path| app.state::<Transcriber>().transcribe(&path, &audio));
+        eprintln!("Transcripción de {:.1} s de audio en {:.2} s", audio.len() as f32 / 16_000.0, started.elapsed().as_secs_f32());
+        match result {
+            Ok(text) if text.is_empty() => {
+                bubble::show(&app, "No te escuché bien. ¿Me lo repites?", BubbleKind::Info, Some(Duration::from_secs(4)));
+                pet::set(&app, PetState::Sleeping);
             }
-            generation = pet::set(&app, window[1].0);
+            Ok(text) => {
+                // Aún no hay agente: Brote muestra lo que entendió y celebra.
+                bubble::show(&app, &text, BubbleKind::Heard, Some(HEARD_TTL));
+                let generation = pet::set(&app, PetState::Done);
+                sleep_after(&app, generation, Duration::from_secs(3));
+            }
+            Err(e) => {
+                eprintln!("Whisper: {e:#}");
+                bubble::show(&app, "No pude entender el audio. ¿Me lo repites?", BubbleKind::Error, Some(Duration::from_secs(6)));
+                pet::set(&app, PetState::Sleeping);
+            }
+        }
+    });
+}
+
+/// Baja el modelo de Whisper si falta y lo deja cargado en memoria.
+fn start_model_download(app: AppHandle) {
+    if matches!(model::status(&app), ModelStatus::Downloading { .. }) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        let was_missing = !matches!(model::model_path(&app).map(|p| p.exists()), Ok(true));
+        if was_missing {
+            bubble::show(&app, "Estoy bajando mi modelo de voz (unos 190 MB). Es solo la primera vez.", BubbleKind::Info, Some(Duration::from_secs(6)));
+        }
+        let progress_app = app.clone();
+        let result = model::ensure_model(app.clone(), move |p| {
+            if p % 25 == 0 && p < 100 {
+                bubble::show(&progress_app, &format!("Bajando modelo de voz: {p}%"), BubbleKind::Info, Some(Duration::from_secs(3)));
+            }
+        })
+        .await;
+        match result {
+            Ok(path) => {
+                // Cargarlo ahora evita que la primera transcripción tarde más.
+                let load_app = app.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = load_app.state::<Transcriber>().load(&path) {
+                        eprintln!("Whisper: {e:#}");
+                    }
+                });
+                if was_missing {
+                    bubble::show(&app, "Listo. Mantén Ctrl+Shift+Espacio y háblame.", BubbleKind::Info, Some(Duration::from_secs(6)));
+                }
+            }
+            Err(e) => {
+                eprintln!("Modelo: {e:#}");
+                bubble::show(
+                    &app,
+                    "No pude bajar mi modelo de voz. Revisa tu conexión; lo intento de nuevo cuando me hables.",
+                    BubbleKind::Error,
+                    Some(Duration::from_secs(8)),
+                );
+            }
         }
     });
 }
@@ -128,6 +255,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(Pet::default())
+        .manage(Recorder::default())
+        .manage(Transcriber::default())
+        .manage(ModelState::default())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
@@ -135,13 +265,8 @@ pub fn run() {
                         return;
                     }
                     match event.state() {
-                        ShortcutState::Pressed => {
-                            if let Some(w) = app.get_webview_window("pet") {
-                                let _ = w.show();
-                            }
-                            pet::set(app, PetState::Listening);
-                        }
-                        ShortcutState::Released => run_demo_sequence(app.clone()),
+                        ShortcutState::Pressed => on_talk_pressed(app),
+                        ShortcutState::Released => on_talk_released(app),
                     }
                 })
                 .build(),
@@ -151,15 +276,26 @@ pub fn run() {
                 eprintln!("No se pudo registrar Ctrl+Shift+Espacio: {e}");
             }
             build_tray(app.handle())?;
+            if let Some(bubble) = app.get_webview_window("bubble") {
+                let _ = bubble.set_visible_on_all_workspaces(true);
+            }
             if let Some(w) = app.get_webview_window("pet") {
                 place_bottom_right(&w);
                 // Visible en todos los escritorios virtuales.
                 let _ = w.set_visible_on_all_workspaces(true);
                 let _ = w.show();
+                // El globo sigue a Brote cuando lo arrastran.
+                let handle = app.handle().clone();
+                w.on_window_event(move |event| {
+                    if let WindowEvent::Moved(_) = event {
+                        bubble::reposition(&handle);
+                    }
+                });
             }
+            start_model_download(app.handle().clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_state, set_state, cycle_state, hide_pet, quit_app])
+        .invoke_handler(tauri::generate_handler![bubble::get_bubble, get_state, set_state, cycle_state, hide_pet, quit_app])
         .run(tauri::generate_context!())
         .expect("error al iniciar Brote");
 }

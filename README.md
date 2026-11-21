@@ -2,14 +2,17 @@
 
 Mascota de escritorio con comandos de voz. App de escritorio hecha con Tauri 2 (núcleo en Rust, interfaz en React con TypeScript).
 
-## Estado actual: hito 1
+## Estado actual: hito 2 (voz)
 
 - Brote flota en una ventana transparente, sin bordes y siempre encima de las demás apps. Aparece en la esquina inferior derecha y no roba el foco.
 - **Arrastrar** a Brote lo mueve por la pantalla.
 - **Clic** sobre Brote pasa al siguiente estado (demo): durmiendo, escuchando, pensando, trabajando, listo.
 - **Clic derecho** abre un menú para elegir un estado, ocultarlo o salir.
-- **Ctrl+Shift+Espacio** (mantener): Brote escucha. Al soltar, simula el flujo completo: pensando, trabajando, listo y de vuelta a dormir. Todavía no graba audio: eso llega en el hito 2.
+- **Ctrl+Shift+Espacio** (mantener): Brote escucha y graba el micrófono. Al soltar, transcribe en tu computador con Whisper y muestra en un globo lo que entendió. El audio nunca sale del equipo.
+- **Primer arranque:** Brote baja su modelo de voz (Whisper `small` cuantizado, unos 190 MB) a la carpeta de datos de la app. Es solo la primera vez y avisa el avance en el globo.
 - **Ícono en la bandeja del sistema** con los mismos estados, mostrar u ocultar, y salir.
+
+Todavía no hay agente: Brote solo muestra lo que entendió. Ejecutar el comando llega en el hito 3.
 
 El núcleo en Rust es la fuente de verdad del estado (`src-tauri/src/pet.rs`). La interfaz solo lo dibuja escuchando el evento `pet-state`. Así, el agente de voz podrá mover a Brote desde Rust sin tocar la interfaz.
 
@@ -23,8 +26,10 @@ Como el instalador todavía no está firmado, Windows SmartScreen puede advertir
 
 - [Node.js](https://nodejs.org) 20 o superior
 - [Rust](https://rustup.rs) estable
+- CMake y LLVM/Clang (para compilar whisper.cpp). En Windows: `winget install Kitware.CMake LLVM.LLVM`
 - Dependencias de sistema de Tauri según tu sistema: https://v2.tauri.app/start/prerequisites/
   - **Windows:** Microsoft C++ Build Tools y WebView2 (ya viene en Windows 10 y 11).
+  - **Linux:** además, `libasound2-dev` para el micrófono.
   - **macOS:** Xcode Command Line Tools (`xcode-select --install`).
 
 ## Correr en modo desarrollo
@@ -44,22 +49,36 @@ npm run tauri build
 
 El instalador queda en `src-tauri/target/release/bundle/`.
 
+## Pruebas
+
+```bash
+cd src-tauri
+cargo test                       # unitarias
+# De punta a punta: baja el modelo real y transcribe un .wav en español
+BROTE_TEST_WAV=frase.wav cargo test --release -- --ignored --nocapture
+```
+
+Para usar un modelo propio en desarrollo: `BROTE_WHISPER_MODEL=/ruta/al/modelo.bin npm run tauri dev`.
+
 ## Estructura
 
 ```
 src/                 Interfaz (React + TS)
   App.tsx            Ventana de Brote: arrastre, clic, menú contextual
+  Bubble.tsx         Globo de texto (segunda ventana, no recibe clics)
   brote.svg          Personaje animado; el estado se cambia con la clase s-<estado>
   state.ts           Lista de estados y sus nombres en español
 src-tauri/
   src/lib.rs         Ventana, bandeja, tecla global y comandos
   src/pet.rs         Estado de Brote (fuente de verdad)
+  src/bubble.rs      Globo: qué dice, dónde va, cuándo se oculta
+  src/voice/         Micrófono (cpal), modelo de Whisper y transcripción
   tauri.conf.json    Ventana transparente, siempre encima, sin barra de tareas
 ```
 
 ## Próximos hitos
 
 1. ~~Ventana flotante con Brote y sus estados~~
-2. Voz: grabar mientras se mantiene la tecla y transcribir en local con Whisper (whisper.cpp)
+2. ~~Voz: grabar mientras se mantiene la tecla y transcribir en local con Whisper (whisper.cpp)~~
 3. Agente con OpenRouter y capa de políticas (confirmación obligatoria en código)
 4. Gmail y Google Calendar, con tarjetas de confirmación
