@@ -71,6 +71,8 @@ export default function App() {
       items: [
         ...stateItems,
         await PredefinedMenuItem.new({ item: "Separator" }),
+        await MenuItem.new({ id: "stop", text: "Detener", action: () => invoke("stop_agent") }),
+        await MenuItem.new({ id: "settings", text: "Ajustes…", action: () => invoke("open_settings") }),
         await MenuItem.new({ id: "hide", text: "Ocultar", action: () => invoke("hide_pet") }),
         await MenuItem.new({ id: "quit", text: "Salir", action: () => invoke("quit_app") }),
       ],
