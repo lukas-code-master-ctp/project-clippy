@@ -106,11 +106,28 @@ html, body, #root {
 
 /* Tarjeta de confirmación */
 .card { width: 100%; }
-.card-preview {
-  font-weight: 600;
-  -webkit-line-clamp: 5 !important;
-  word-break: break-word;
+.card-title { font-size: 15px; margin: 0 0 8px; }
+.card-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
 }
+.card-field { display: flex; flex-direction: column; gap: 2px; }
+.card-field > span { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.card-value { font-weight: 600; word-break: break-word; white-space: pre-wrap; }
+.card-field input, .card-field textarea {
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 1.5px solid var(--muted);
+  border-radius: 8px;
+  padding: 5px 8px;
+  resize: vertical;
+}
+.card-field input:focus, .card-field textarea:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+.card-edited { margin-right: auto; align-self: center; font-size: 12px; color: var(--accent); font-weight: 600; }
 .card-actions {
   display: flex;
   justify-content: flex-end;
@@ -132,6 +149,7 @@ html, body, #root {
 
 /* Ventana de ajustes: ventana normal, con fondo. */
 html.opaque, html.opaque body, html.opaque #root {
+  overflow-y: auto;
   background: var(--surface);
   color: var(--ink);
   user-select: text;
@@ -163,3 +181,8 @@ html.opaque, html.opaque body, html.opaque #root {
 .status-ok { color: #1f8a4c; }
 .status-error { color: var(--danger); }
 .status-busy { color: var(--muted); }
+
+.settings h2 { font-size: 15px; margin: 0 0 10px; }
+.settings .google { border-top: 1px solid var(--muted); margin-top: 20px; padding-top: 16px; }
+.settings .google input { margin-bottom: 10px; }
+.settings .connected { color: #1f8a4c; font-weight: 600; margin: 0 0 10px; }

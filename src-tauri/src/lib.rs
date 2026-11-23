@@ -1,5 +1,6 @@
 mod agent;
 mod bubble;
+mod google;
 mod pet;
 mod settings;
 mod voice;
@@ -30,6 +31,13 @@ const PET_SIZE: f64 = 200.0;
 /// El comando que el agente está ejecutando, para poder detenerlo.
 #[derive(Default)]
 struct AgentTask(Mutex<Option<tauri::async_runtime::JoinHandle<()>>>);
+
+/// La conversación del último comando, para responderle a Brote ("el primero", "sí, ese").
+#[derive(Default)]
+struct Conversation(Mutex<Option<(std::time::Instant, Vec<agent::openrouter::Message>)>>);
+
+/// Pasado este tiempo, un comando nuevo empieza de cero.
+const CONVERSATION_TTL: Duration = Duration::from_secs(180);
 
 #[tauri::command]
 fn get_state(pet: tauri::State<Pet>) -> PetState {
@@ -137,17 +145,26 @@ fn start_agent(app: &AppHandle, text: String) {
     let task = tauri::async_runtime::spawn(async move {
         let app = task_app;
         let opener_app = app.clone();
-        let registry = Registry::default().with(tools::fecha_y_hora()).with(tools::abrir_sitio_web(move |url| {
-            opener_app.opener().open_url(url, None::<&str>).map_err(|e| anyhow::anyhow!("no pude abrir el navegador: {e}"))
-        }));
+        let registry = Registry::default()
+            .with(tools::fecha_y_hora())
+            .with(tools::abrir_sitio_web(move |url| {
+                opener_app.opener().open_url(url, None::<&str>).map_err(|e| anyhow::anyhow!("no pude abrir el navegador: {e}"))
+            }))
+            .with_all(google::tools::all(&google::api(&app)));
         let llm = OpenRouterLlm { key, model: model.clone() };
         let confirmer = CardConfirmer { app: app.clone() };
         let started = std::time::Instant::now();
-        let result = agent::run(&llm, &registry, &confirmer, &text).await;
+        let history = match app.state::<Conversation>().0.lock().unwrap().take() {
+            Some((at, messages)) if at.elapsed() < CONVERSATION_TTL => messages,
+            _ => vec![],
+        };
+        let result = agent::run(&llm, &registry, &confirmer, history, &text).await;
         eprintln!("Agente: {:.2} s", started.elapsed().as_secs_f32());
         app.state::<AgentTask>().0.lock().unwrap().take();
         match result {
-            Ok(reply) if !reply.is_empty() => {
+            Ok(outcome) if !outcome.reply.is_empty() => {
+                let reply = outcome.reply;
+                *app.state::<Conversation>().0.lock().unwrap() = Some((std::time::Instant::now(), outcome.history));
                 bubble::show(&app, &reply, BubbleKind::Reply, Some(reading_time(&reply)));
                 let generation = pet::set(&app, PetState::Done);
                 sleep_after(&app, generation, Duration::from_secs(3));
@@ -374,6 +391,8 @@ pub fn run() {
         .manage(ModelState::default())
         .manage(Gate::default())
         .manage(AgentTask::default())
+        .manage(Conversation::default())
+        .manage(std::sync::Arc::new(google::auth::GoogleAuth::default()))
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -393,8 +412,9 @@ pub fn run() {
                 eprintln!("No se pudo registrar Ctrl+Shift+Espacio: {e}");
             }
             build_tray(app.handle())?;
-            // Lee la key una vez al arrancar, en el hilo principal.
+            // Lee las credenciales una vez al arrancar, en el hilo principal.
             let _ = settings::api_key();
+            app.state::<std::sync::Arc<google::auth::GoogleAuth>>().load();
             if let Some(bubble) = app.get_webview_window("bubble") {
                 let _ = bubble.set_visible_on_all_workspaces(true);
             }
@@ -440,6 +460,10 @@ pub fn run() {
             settings::get_settings,
             settings::save_settings,
             settings::test_connection,
+            google::google_status,
+            google::google_save_client,
+            google::google_connect,
+            google::google_disconnect,
             get_state,
             set_state,
             cycle_state,

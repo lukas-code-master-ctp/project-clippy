@@ -17,6 +17,9 @@
       "allow": [
         {
           "url": "https://openrouter.ai/*"
+        },
+        {
+          "url": "https://github.com/lukas-code-master-ctp/project-clippy/*"
         }
       ]
     }
