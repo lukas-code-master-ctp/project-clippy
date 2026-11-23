@@ -8,6 +8,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  # whisper.cpp se compila para CPUs x86 de 2013 en adelante (AVX2), no solo para la del servidor de CI.
+  GGML_NATIVE: "OFF"
+  GGML_AVX: "ON"
+  GGML_AVX2: "ON"
+  GGML_FMA: "ON"
+  GGML_F16C: "ON"
+
 jobs:
   build:
     runs-on: windows-latest
@@ -24,6 +32,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # whisper-rs-sys no se recompila al cambiar las variables GGML_*: cambiar esta clave fuerza a hacerlo.
+          key: ggml-portable-v1
 
       - run: npm ci
 

@@ -26,3 +26,80 @@ html, body, #root {
   /* Un halo suave para que Brote se lea sobre fondos claros y oscuros. */
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.18));
 }
+
+/* Globo de texto: mismos colores que Brote, en claro y oscuro. */
+:root {
+  --ink: #18202b;
+  --surface: #ffffff;
+  --accent: #3b5bfd;
+  --danger: #c2372e;
+  --muted: #5b6574;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e9edf4;
+    --surface: #171c25;
+    --accent: #8ea2ff;
+    --danger: #ff8a80;
+    --muted: #a4adbb;
+  }
+}
+
+.bubble-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0 14px 12px 6px;
+  box-sizing: border-box;
+}
+
+.bubble {
+  position: relative;
+  max-width: 100%;
+  background: var(--surface);
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  border-radius: 18px;
+  padding: 8px 12px;
+  font: 500 13.5px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  animation: bubble-in 0.18s ease-out both;
+}
+.bubble p {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Cola del globo, apuntando a Brote. */
+.bubble::after {
+  content: "";
+  position: absolute;
+  right: 54px;
+  bottom: -10px;
+  width: 14px;
+  height: 14px;
+  background: var(--surface);
+  border-right: 3px solid var(--ink);
+  border-bottom: 3px solid var(--ink);
+  transform: rotate(45deg);
+}
+.bubble-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+.bubble-error { border-color: var(--danger); }
+.bubble-error::after { border-color: var(--danger); }
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
