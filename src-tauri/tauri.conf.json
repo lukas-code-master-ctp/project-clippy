@@ -41,6 +41,31 @@
         "skipTaskbar": true,
         "focus": false,
         "visible": false
+      },
+      {
+        "label": "confirm",
+        "title": "Brote: confirmar",
+        "url": "index.html#confirm",
+        "width": 300,
+        "height": 220,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "visible": false
+      },
+      {
+        "label": "settings",
+        "title": "Ajustes de Brote",
+        "url": "index.html#settings",
+        "width": 460,
+        "height": 440,
+        "resizable": false,
+        "center": true,
+        "visible": false
       }
     ],
     "security": {

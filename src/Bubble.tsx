@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-type BubbleKind = "heard" | "info" | "error";
+type BubbleKind = "heard" | "info" | "reply" | "error";
 interface BubblePayload {
   text: string;
   kind: BubbleKind;

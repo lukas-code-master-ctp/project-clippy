@@ -1,8 +1,15 @@
+mod agent;
 mod bubble;
 mod pet;
+mod settings;
 mod voice;
 
+use agent::confirm::{self, CardConfirmer};
+use agent::policy::Gate;
+use agent::tools::{self, Registry};
+use agent::OpenRouterLlm;
 use bubble::BubbleKind;
+use std::sync::Mutex;
 use pet::{Pet, PetState};
 use std::time::Duration;
 use tauri::{
@@ -10,6 +17,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Manager, PhysicalPosition, WebviewWindow, WindowEvent,
 };
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use voice::model::{self, ModelState, ModelStatus};
 use voice::recorder::Recorder;
@@ -19,8 +27,9 @@ use voice::transcriber::Transcriber;
 const SCREEN_MARGIN: f64 = 24.0;
 /// Tamaño lógico de la ventana (igual que en tauri.conf.json).
 const PET_SIZE: f64 = 200.0;
-/// Cuánto se queda visible lo que Brote entendió.
-const HEARD_TTL: Duration = Duration::from_secs(8);
+/// El comando que el agente está ejecutando, para poder detenerlo.
+#[derive(Default)]
+struct AgentTask(Mutex<Option<tauri::async_runtime::JoinHandle<()>>>);
 
 #[tauri::command]
 fn get_state(pet: tauri::State<Pet>) -> PetState {
@@ -49,6 +58,112 @@ fn hide_pet(app: AppHandle) {
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+fn open_settings(app: AppHandle) {
+    show_settings(&app);
+}
+
+#[tauri::command]
+fn stop_agent(app: AppHandle) {
+    if stop_running_agent(&app) {
+        bubble::show(&app, "Listo, me detuve.", BubbleKind::Info, Some(Duration::from_secs(3)));
+        pet::set(&app, PetState::Sleeping);
+    }
+}
+
+fn show_settings(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("settings") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+/// Detiene el comando en curso, si hay uno. Las confirmaciones pendientes cuentan como "no".
+fn stop_running_agent(app: &AppHandle) -> bool {
+    app.state::<Gate>().cancel_all();
+    confirm::hide(app);
+    match app.state::<AgentTask>().0.lock().unwrap().take() {
+        Some(task) => {
+            task.abort();
+            true
+        }
+        None => false,
+    }
+}
+
+/// Cuánto dejar visible un texto: más largo, más tiempo, con tope.
+fn reading_time(text: &str) -> Duration {
+    Duration::from_millis((4_000 + 60 * text.chars().count() as u64).min(15_000))
+}
+
+/// Traduce errores técnicos a algo que se entienda en un globo.
+fn friendly_agent_error(e: &anyhow::Error, model: &str) -> String {
+    let raw = format!("{e:#}");
+    let lower = raw.to_lowercase();
+    if lower.contains("401") || lower.contains("no auth") || lower.contains("invalid api key") {
+        "Mi API key de OpenRouter no funciona. Revísala en Ajustes.".into()
+    } else if lower.contains("402") || lower.contains("credits") {
+        "Tu cuenta de OpenRouter se quedó sin saldo.".into()
+    } else if lower.contains("not a valid model") || lower.contains("no endpoints found") || lower.contains("404") {
+        format!("No encuentro el modelo {model} en OpenRouter. Cámbialo en Ajustes.")
+    } else if lower.contains("conectarme") || lower.contains("timed out") || lower.contains("timeout") {
+        "No pude conectarme. Revisa tu internet.".into()
+    } else {
+        "Algo falló al pensar la respuesta. ¿Lo intentamos de nuevo?".into()
+    }
+}
+
+/// Manda el comando al agente. Lo que se oyó queda en el globo mientras piensa.
+fn start_agent(app: &AppHandle, text: String) {
+    let Some(key) = settings::api_key() else {
+        bubble::show(
+            app,
+            "Para ayudarte necesito tu API key de OpenRouter. Te abro los ajustes.",
+            BubbleKind::Info,
+            Some(Duration::from_secs(6)),
+        );
+        pet::set(app, PetState::Sleeping);
+        show_settings(app);
+        return;
+    };
+    let model = settings::load(app).model;
+    bubble::show(app, &text, BubbleKind::Heard, None);
+    pet::set(app, PetState::Thinking);
+
+    let task_app = app.clone();
+    let task = tauri::async_runtime::spawn(async move {
+        let app = task_app;
+        let opener_app = app.clone();
+        let registry = Registry::default().with(tools::fecha_y_hora()).with(tools::abrir_sitio_web(move |url| {
+            opener_app.opener().open_url(url, None::<&str>).map_err(|e| anyhow::anyhow!("no pude abrir el navegador: {e}"))
+        }));
+        let llm = OpenRouterLlm { key, model: model.clone() };
+        let confirmer = CardConfirmer { app: app.clone() };
+        let started = std::time::Instant::now();
+        let result = agent::run(&llm, &registry, &confirmer, &text).await;
+        eprintln!("Agente: {:.2} s", started.elapsed().as_secs_f32());
+        app.state::<AgentTask>().0.lock().unwrap().take();
+        match result {
+            Ok(reply) if !reply.is_empty() => {
+                bubble::show(&app, &reply, BubbleKind::Reply, Some(reading_time(&reply)));
+                let generation = pet::set(&app, PetState::Done);
+                sleep_after(&app, generation, Duration::from_secs(3));
+            }
+            Ok(_) => {
+                bubble::hide(&app);
+                pet::set(&app, PetState::Sleeping);
+            }
+            Err(e) => {
+                eprintln!("Agente: {e:#}");
+                bubble::show(&app, &friendly_agent_error(&e, &model), BubbleKind::Error, Some(Duration::from_secs(8)));
+                pet::set(&app, PetState::Sleeping);
+            }
+        }
+    });
+    *app.state::<AgentTask>().0.lock().unwrap() = Some(task);
 }
 
 fn toggle_visibility(app: &AppHandle) {
@@ -98,6 +213,8 @@ fn on_talk_pressed(app: &AppHandle) {
     if recorder.is_recording() {
         return;
     }
+    // Hablar de nuevo reemplaza lo que estaba haciendo.
+    stop_running_agent(app);
     match model::status(app) {
         ModelStatus::Ready => {}
         ModelStatus::Downloading { percent } => {
@@ -159,12 +276,7 @@ fn on_talk_released(app: &AppHandle) {
                 bubble::show(&app, "No te escuché bien. ¿Me lo repites?", BubbleKind::Info, Some(Duration::from_secs(4)));
                 pet::set(&app, PetState::Sleeping);
             }
-            Ok(text) => {
-                // Aún no hay agente: Brote muestra lo que entendió y celebra.
-                bubble::show(&app, &text, BubbleKind::Heard, Some(HEARD_TTL));
-                let generation = pet::set(&app, PetState::Done);
-                sleep_after(&app, generation, Duration::from_secs(3));
-            }
+            Ok(text) => start_agent(&app, text),
             Err(e) => {
                 eprintln!("Whisper: {e:#}");
                 bubble::show(&app, "No pude entender el audio. ¿Me lo repites?", BubbleKind::Error, Some(Duration::from_secs(6)));
@@ -223,6 +335,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         items.push(Box::new(MenuItem::with_id(app, format!("state-{}", s.id()), s.label(), true, None::<&str>)?));
     }
     items.push(Box::new(PredefinedMenuItem::separator(app)?));
+    items.push(Box::new(MenuItem::with_id(app, "settings", "Ajustes…", true, None::<&str>)?));
     items.push(Box::new(MenuItem::with_id(app, "toggle", "Mostrar u ocultar", true, None::<&str>)?));
     items.push(Box::new(MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?));
     let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = items.iter().map(|b| b.as_ref()).collect();
@@ -236,6 +349,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             let id = event.id().as_ref();
             match id {
                 "toggle" => toggle_visibility(app),
+                "settings" => show_settings(app),
                 "quit" => app.exit(0),
                 _ => {
                     if let Some(s) = id.strip_prefix("state-").and_then(PetState::from_id) {
@@ -258,6 +372,9 @@ pub fn run() {
         .manage(Recorder::default())
         .manage(Transcriber::default())
         .manage(ModelState::default())
+        .manage(Gate::default())
+        .manage(AgentTask::default())
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
@@ -276,6 +393,8 @@ pub fn run() {
                 eprintln!("No se pudo registrar Ctrl+Shift+Espacio: {e}");
             }
             build_tray(app.handle())?;
+            // Lee la key una vez al arrancar, en el hilo principal.
+            let _ = settings::api_key();
             if let Some(bubble) = app.get_webview_window("bubble") {
                 let _ = bubble.set_visible_on_all_workspaces(true);
             }
@@ -292,10 +411,43 @@ pub fn run() {
                     }
                 });
             }
+            if let Some(w) = app.get_webview_window("settings") {
+                // Cerrar los ajustes solo los oculta; Brote sigue corriendo.
+                let win = w.clone();
+                w.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win.hide();
+                    }
+                });
+            }
             start_model_download(app.handle().clone());
+            // Solo en desarrollo: ejecuta un comando escrito, sin micrófono, para probar el agente.
+            #[cfg(debug_assertions)]
+            if let Ok(command) = std::env::var("BROTE_DEMO_COMMAND") {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(3));
+                    start_agent(&handle, command);
+                });
+            }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![bubble::get_bubble, get_state, set_state, cycle_state, hide_pet, quit_app])
+        .invoke_handler(tauri::generate_handler![
+            bubble::get_bubble,
+            confirm::get_confirmation,
+            confirm::resolve_confirmation,
+            settings::get_settings,
+            settings::save_settings,
+            settings::test_connection,
+            get_state,
+            set_state,
+            cycle_state,
+            hide_pet,
+            quit_app,
+            open_settings,
+            stop_agent
+        ])
         .run(tauri::generate_context!())
         .expect("error al iniciar Brote");
 }

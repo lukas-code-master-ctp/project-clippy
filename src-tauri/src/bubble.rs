@@ -22,6 +22,8 @@ pub enum BubbleKind {
     Heard,
     /// Un aviso de Brote (descargas, estado).
     Info,
+    /// La respuesta del agente.
+    Reply,
     Error,
 }
 
@@ -75,16 +77,22 @@ pub fn hide(app: &AppHandle) {
     }
 }
 
-/// Pone el globo sobre Brote, alineado a su borde derecho.
-/// Si no cabe arriba (Brote pegado al borde superior), lo pone debajo.
+/// Pone el globo sobre Brote. Ver `place_above_pet`.
 pub fn reposition(app: &AppHandle) {
-    let (Some(pet), Some(bubble)) = (app.get_webview_window("pet"), app.get_webview_window("bubble")) else { return };
-    let (Ok(pet_pos), Ok(pet_size), Ok(size)) = (pet.outer_position(), pet.outer_size(), bubble.outer_size()) else { return };
+    place_above_pet(app, "bubble", BUBBLE_W, BUBBLE_H);
+    place_above_pet(app, "confirm", crate::agent::confirm::CARD_W, crate::agent::confirm::CARD_H);
+}
+
+/// Pone una ventana (globo o tarjeta) sobre Brote, alineada a su borde derecho.
+/// Si no cabe arriba (Brote pegado al borde superior), la pone debajo.
+pub fn place_above_pet(app: &AppHandle, label: &str, logical_w: f64, logical_h: f64) {
+    let (Some(pet), Some(win)) = (app.get_webview_window("pet"), app.get_webview_window(label)) else { return };
+    let (Ok(pet_pos), Ok(pet_size), Ok(size)) = (pet.outer_position(), pet.outer_size(), win.outer_size()) else { return };
     let scale = pet.scale_factor().unwrap_or(1.0);
     let overlap = (OVERLAP * scale) as i32;
     // Una ventana que nunca se mostró puede reportar tamaño 0 en Linux.
-    let bw = size.width.max((BUBBLE_W * scale) as u32) as i32;
-    let bh = size.height.max((BUBBLE_H * scale) as u32) as i32;
+    let bw = size.width.max((logical_w * scale) as u32) as i32;
+    let bh = size.height.max((logical_h * scale) as u32) as i32;
 
     let mut x = pet_pos.x + pet_size.width as i32 - bw;
     let mut y = pet_pos.y - bh + overlap;
@@ -95,5 +103,5 @@ pub fn reposition(app: &AppHandle) {
         }
         x = x.clamp(area.position.x, area.position.x + area.size.width as i32 - bw);
     }
-    let _ = bubble.set_position(PhysicalPosition::new(x, y));
+    let _ = win.set_position(PhysicalPosition::new(x, y));
 }
