@@ -417,6 +417,14 @@ pub fn run() {
         .manage(AgentTask::default())
         .manage(Conversation::default())
         .manage(std::sync::Arc::new(google::auth::GoogleAuth::default()))
+        // Abrir Brote de nuevo muestra el que ya está corriendo, en vez de lanzar otro
+        // (dos copias pelean por Ctrl+Shift+Espacio).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            log::info!("Se intentó abrir otra copia; muestro la que ya corre");
+            if let Some(w) = app.get_webview_window("pet") {
+                let _ = w.show();
+            }
+        }))
         .plugin(logs::plugin())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
