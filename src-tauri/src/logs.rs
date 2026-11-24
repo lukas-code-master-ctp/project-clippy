@@ -24,6 +24,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .rotation_strategy(RotationStrategy::KeepSome(KEEP_FILES))
         .level(log::LevelFilter::Warn)
         .level_for("brote_lib", log::LevelFilter::Info)
+        // El actualizador registra en debug qué instalador lanza y con qué parámetros.
+        .level_for("tauri_plugin_updater", log::LevelFilter::Debug)
         .format(|out, message, record| {
             out.finish(format_args!(
                 "{} {:<5} [{}] {}",
