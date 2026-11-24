@@ -4,9 +4,14 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import broteSvg from "./brote.svg?raw";
-import { PET_STATES, STATE_LABELS, type PetState } from "./state";
+import { PET_STATES, type PetState } from "./state";
 
 const DRAG_THRESHOLD_PX = 4;
+/** Mantener apretado más que esto, sin mover, empieza a escuchar. */
+const HOLD_TO_TALK_MS = 400;
+/** Ventana para el segundo clic de un doble clic. */
+const DOUBLE_CLICK_MS = 260;
+const TICKLE_MS = 900;
 
 export default function App() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -29,26 +34,70 @@ export default function App() {
     svg.classList.add(`s-${state}`);
   }, [state]);
 
-  // Arrastrar mueve la ventana. Un clic sin arrastrar avanza al siguiente estado (demo del hito 1).
+
+  // Gestos sobre Brote:
+  // - arrastrar (mover más de 4 px) lo mueve;
+  // - mantener apretado sin mover = hablar mientras se mantiene, igual que Ctrl+Shift+Espacio;
+  // - doble clic = caja para escribirle;
+  // - un clic = cosquillas.
+  const clickTimer = useRef<number | undefined>(undefined);
+  const tickleTimer = useRef<number | undefined>(undefined);
+
+  const tickle = () => {
+    const svg = hostRef.current?.querySelector("svg");
+    if (svg) {
+      // Quitar la clase y forzar un reflow reinicia la animación si le hacen cosquillas seguidas.
+      svg.classList.remove("tickle");
+      void svg.getBoundingClientRect();
+      svg.classList.add("tickle");
+      window.clearTimeout(tickleTimer.current);
+      tickleTimer.current = window.setTimeout(() => svg.classList.remove("tickle"), TICKLE_MS);
+    }
+    invoke("tickle").catch(console.error);
+  };
+
   const onMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const startX = e.screenX;
     const startY = e.screenY;
-    let dragging = false;
+    let mode: "pending" | "drag" | "talk" = "pending";
+
+    const holdTimer = window.setTimeout(() => {
+      if (mode !== "pending") return;
+      mode = "talk";
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = undefined;
+      invoke("talk_start").catch(console.error);
+    }, HOLD_TO_TALK_MS);
 
     const onMove = (ev: MouseEvent) => {
-      if (dragging) return;
+      if (mode !== "pending") return;
       if (Math.hypot(ev.screenX - startX, ev.screenY - startY) > DRAG_THRESHOLD_PX) {
-        dragging = true;
+        mode = "drag";
         cleanup();
         getCurrentWindow().startDragging().catch(console.error);
       }
     };
     const onUp = () => {
       cleanup();
-      if (!dragging) invoke("cycle_state").catch(console.error);
+      if (mode === "talk") {
+        invoke("talk_stop").catch(console.error);
+      } else if (mode === "pending") {
+        if (clickTimer.current !== undefined) {
+          // Segundo clic a tiempo: doble clic.
+          window.clearTimeout(clickTimer.current);
+          clickTimer.current = undefined;
+          invoke("open_ask").catch(console.error);
+        } else {
+          clickTimer.current = window.setTimeout(() => {
+            clickTimer.current = undefined;
+            tickle();
+          }, DOUBLE_CLICK_MS);
+        }
+      }
     };
     const cleanup = () => {
+      window.clearTimeout(holdTimer);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -58,18 +107,9 @@ export default function App() {
 
   const onContextMenu = async (e: React.MouseEvent) => {
     e.preventDefault();
-    const stateItems = await Promise.all(
-      PET_STATES.map((s) =>
-        MenuItem.new({
-          id: `state-${s}`,
-          text: (s === state ? "● " : "    ") + STATE_LABELS[s],
-          action: () => invoke("set_state", { state: s }),
-        }),
-      ),
-    );
     const menu = await Menu.new({
       items: [
-        ...stateItems,
+        await MenuItem.new({ id: "ask", text: "Escribirle…", action: () => invoke("open_ask") }),
         await PredefinedMenuItem.new({ item: "Separator" }),
         await MenuItem.new({ id: "stop", text: "Detener", action: () => invoke("stop_agent") }),
         await MenuItem.new({ id: "settings", text: "Ajustes…", action: () => invoke("open_settings") }),

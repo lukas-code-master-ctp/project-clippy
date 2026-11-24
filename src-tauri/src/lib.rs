@@ -1,4 +1,5 @@
 mod agent;
+mod ask;
 mod bubble;
 mod google;
 mod logs;
@@ -16,7 +17,7 @@ use std::sync::Mutex;
 use pet::{Pet, PetState};
 use std::time::Duration;
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     AppHandle, Manager, PhysicalPosition, WebviewWindow, WindowEvent,
 };
@@ -51,10 +52,15 @@ fn set_state(app: AppHandle, state: PetState) {
     pet::set(&app, state);
 }
 
+/// Mantener apretado a Brote con el mouse: lo mismo que la tecla para hablar.
 #[tauri::command]
-fn cycle_state(app: AppHandle) {
-    let next = app.state::<Pet>().get().next();
-    pet::set(&app, next);
+fn talk_start(app: AppHandle) {
+    on_talk_pressed(&app);
+}
+
+#[tauri::command]
+fn talk_stop(app: AppHandle) {
+    on_talk_released(&app);
 }
 
 #[tauri::command]
@@ -92,7 +98,7 @@ fn show_settings(app: &AppHandle) {
 }
 
 /// Detiene el comando en curso, si hay uno. Las confirmaciones pendientes cuentan como "no".
-fn stop_running_agent(app: &AppHandle) -> bool {
+pub(crate) fn stop_running_agent(app: &AppHandle) -> bool {
     app.state::<Gate>().cancel_all();
     confirm::hide(app);
     match app.state::<AgentTask>().0.lock().unwrap().take() {
@@ -128,7 +134,7 @@ fn friendly_agent_error(e: &anyhow::Error, model: &str) -> String {
 }
 
 /// Manda el comando al agente. Lo que se oyó queda en el globo mientras piensa.
-fn start_agent(app: &AppHandle, text: String) {
+pub(crate) fn start_agent(app: &AppHandle, text: String) {
     let Some(key) = settings::api_key() else {
         log::warn!("Falta la API key de OpenRouter");
         bubble::show(
@@ -367,10 +373,6 @@ fn start_model_download(app: AppHandle) {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
-    for s in PetState::ALL {
-        items.push(Box::new(MenuItem::with_id(app, format!("state-{}", s.id()), s.label(), true, None::<&str>)?));
-    }
-    items.push(Box::new(PredefinedMenuItem::separator(app)?));
     items.push(Box::new(MenuItem::with_id(app, "settings", "Ajustes…", true, None::<&str>)?));
     items.push(Box::new(MenuItem::with_id(app, "toggle", "Mostrar u ocultar", true, None::<&str>)?));
     items.push(Box::new(MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?));
@@ -387,11 +389,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 "toggle" => toggle_visibility(app),
                 "settings" => show_settings(app),
                 "quit" => app.exit(0),
-                _ => {
-                    if let Some(s) = id.strip_prefix("state-").and_then(PetState::from_id) {
-                        pet::set(app, s);
-                    }
-                }
+                _ => {}
             }
         })
         .build(app)?;
@@ -499,7 +497,12 @@ pub fn run() {
             updater::check_updates,
             get_state,
             set_state,
-            cycle_state,
+            talk_start,
+            talk_stop,
+            ask::open_ask,
+            ask::close_ask,
+            ask::submit_text,
+            ask::tickle,
             hide_pet,
             quit_app,
             open_settings,

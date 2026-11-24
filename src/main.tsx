@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import Ask from "./Ask";
 import Bubble from "./Bubble";
 import Confirm from "./Confirm";
 import Settings from "./Settings";
@@ -8,6 +9,7 @@ import "./styles.css";
 
 // La misma página sirve a todas las ventanas; el hash dice cuál es.
 const views: Record<string, () => React.JSX.Element | null> = {
+  "#ask": Ask,
   "#bubble": Bubble,
   "#confirm": Confirm,
   "#settings": Settings,

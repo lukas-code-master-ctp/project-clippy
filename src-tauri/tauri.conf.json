@@ -58,6 +58,20 @@
         "visible": false
       },
       {
+        "label": "ask",
+        "title": "Brote: escribir",
+        "url": "index.html#ask",
+        "width": 320,
+        "height": 64,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false
+      },
+      {
         "label": "settings",
         "title": "Ajustes de Brote",
         "url": "index.html#settings",

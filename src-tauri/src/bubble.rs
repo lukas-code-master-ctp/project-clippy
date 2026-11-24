@@ -81,6 +81,7 @@ pub fn hide(app: &AppHandle) {
 pub fn reposition(app: &AppHandle) {
     place_above_pet(app, "bubble", BUBBLE_W, BUBBLE_H);
     place_above_pet(app, "confirm", crate::agent::confirm::CARD_W, crate::agent::confirm::CARD_H);
+    place_above_pet(app, "ask", crate::ask::ASK_W, crate::ask::ASK_H);
 }
 
 /// Pone una ventana (globo o tarjeta) sobre Brote, alineada a su borde derecho.

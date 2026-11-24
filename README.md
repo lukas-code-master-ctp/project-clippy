@@ -6,8 +6,11 @@ Mascota de escritorio con comandos de voz. App de escritorio hecha con Tauri 2 (
 
 - Brote flota en una ventana transparente, sin bordes y siempre encima de las demás apps. Aparece en la esquina inferior derecha y no roba el foco.
 - **Arrastrar** a Brote lo mueve por la pantalla.
-- **Clic** sobre Brote pasa al siguiente estado (demo): durmiendo, escuchando, pensando, trabajando, listo.
-- **Clic derecho** abre un menú para elegir un estado, ocultarlo o salir.
+- **Mantener apretado** a Brote con el mouse (sin moverlo): escucha mientras lo mantienes, igual que Ctrl+Shift+Espacio.
+- **Doble clic**: abre una caja para escribirle la orden en vez de hablar. Enter envía, Esc cierra.
+- **Un clic**: cosquillas.
+- **Arrastrar** lo mueve (si el mouse se mueve antes de 0,4 s es arrastre, no habla).
+- **Clic derecho** abre un menú: escribirle, detener, ajustes, ocultar o salir.
 - **Ctrl+Shift+Espacio** (mantener): Brote escucha y graba el micrófono. Al soltar, transcribe en tu computador con Whisper y muestra en un globo lo que entendió. El audio nunca sale del equipo.
 - **Primer arranque:** Brote baja su modelo de voz (Whisper `small` cuantizado, unos 190 MB) a la carpeta de datos de la app. Es solo la primera vez y avisa el avance en el globo.
 - **Ícono en la bandeja del sistema** con los mismos estados, mostrar u ocultar, y salir.
@@ -89,7 +92,8 @@ Variables útiles en desarrollo:
 
 ```
 src/                 Interfaz (React + TS)
-  App.tsx            Ventana de Brote: arrastre, clic, menú contextual
+  App.tsx            Ventana de Brote: gestos (arrastrar, mantener, clic, doble clic), menú
+  Ask.tsx            Caja para escribirle una orden
   Bubble.tsx         Globo de texto (segunda ventana, no recibe clics)
   Confirm.tsx        Tarjeta de confirmación de acciones sensibles
   Settings.tsx       Ventana de ajustes
