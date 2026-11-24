@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
-import broteSvg from "./brote.svg?raw";
+import petSvg from "./canela.svg?raw";
 import { PET_STATES, type PetState } from "./state";
 
 const DRAG_THRESHOLD_PX = 4;
@@ -47,11 +47,13 @@ export default function App() {
     const svg = hostRef.current?.querySelector("svg");
     if (svg) {
       // Quitar la clase y forzar un reflow reinicia la animación si le hacen cosquillas seguidas.
-      svg.classList.remove("tickle");
+      // La clase en el <svg> cambia los cuadros; en el contenedor, lo hace saltar.
+      const targets = [svg, hostRef.current!];
+      targets.forEach((el) => el.classList.remove("tickle"));
       void svg.getBoundingClientRect();
-      svg.classList.add("tickle");
+      targets.forEach((el) => el.classList.add("tickle"));
       window.clearTimeout(tickleTimer.current);
-      tickleTimer.current = window.setTimeout(() => svg.classList.remove("tickle"), TICKLE_MS);
+      tickleTimer.current = window.setTimeout(() => targets.forEach((el) => el.classList.remove("tickle")), TICKLE_MS);
     }
     invoke("tickle").catch(console.error);
   };
@@ -126,7 +128,7 @@ export default function App() {
       className="stage"
       onMouseDown={onMouseDown}
       onContextMenu={onContextMenu}
-      dangerouslySetInnerHTML={{ __html: broteSvg }}
+      dangerouslySetInnerHTML={{ __html: petSvg }}
     />
   );
 }

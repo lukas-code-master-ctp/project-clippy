@@ -39,8 +39,8 @@ export default function Ask() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Escape" && invoke("close_ask").catch(console.error)}
-          placeholder="Escríbele a Brote…"
-          aria-label="Orden para Brote"
+          placeholder="Escríbele a Canela…"
+          aria-label="Orden para Canela"
           maxLength={500}
           spellCheck
         />
