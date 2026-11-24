@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import GoogleSettings from "./GoogleSettings";
+import Updates from "./Updates";
 
 interface SettingsView {
   model: string;
@@ -107,6 +108,8 @@ export default function Settings() {
       )}
 
       <GoogleSettings />
+
+      <Updates />
 
       <h2>Diagnóstico</h2>
       <section>

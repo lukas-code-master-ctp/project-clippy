@@ -4,6 +4,7 @@ mod google;
 mod logs;
 mod pet;
 mod settings;
+mod updater;
 mod voice;
 
 use agent::confirm::{self, CardConfirmer};
@@ -397,6 +398,13 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Brote no está haciendo nada: buen momento para actualizarse.
+pub(crate) fn is_idle(app: &AppHandle) -> bool {
+    app.state::<Pet>().get() == PetState::Sleeping
+        && !app.state::<Recorder>().is_recording()
+        && app.state::<AgentTask>().0.lock().unwrap().is_none()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Tecla para hablar: Ctrl+Shift+Espacio (Ctrl+Espacio choca con el cambio de idioma en varios sistemas).
@@ -412,6 +420,7 @@ pub fn run() {
         .manage(Conversation::default())
         .manage(std::sync::Arc::new(google::auth::GoogleAuth::default()))
         .plugin(logs::plugin())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -462,6 +471,7 @@ pub fn run() {
                 });
             }
             start_model_download(app.handle().clone());
+            updater::start(app.handle().clone());
             // Solo en desarrollo: ejecuta un comando escrito, sin micrófono, para probar el agente.
             #[cfg(debug_assertions)]
             if let Ok(command) = std::env::var("BROTE_DEMO_COMMAND") {
@@ -485,6 +495,8 @@ pub fn run() {
             google::google_connect,
             google::google_disconnect,
             logs::open_log_dir,
+            updater::app_version,
+            updater::check_updates,
             get_state,
             set_state,
             cycle_state,

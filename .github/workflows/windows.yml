@@ -1,10 +1,8 @@
 name: Instalador de Windows
 
-# Compila Brote en Windows en cada push a main o pull request,
-# y deja el instalador (.msi y .exe) como artefacto descargable.
+# Compila Brote en Windows en cada pull request y deja el instalador (.msi y .exe)
+# como artefacto descargable. Lo que llega a main lo publica release.yml.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -37,8 +35,20 @@ jobs:
 
       - run: npm ci
 
+      # Con la llave de firma, prueba también lo que hace release.yml (firma y latest.json) sin publicar nada.
       - name: Compilar instalador
-        run: npm run tauri build
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo '{"bundle":{"createUpdaterArtifacts":true}}' > release.conf.json
+            npm run tauri build -- --config release.conf.json
+            node scripts/latest-json.mjs 0.1.0 https://example.invalid
+          else
+            npm run tauri build
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

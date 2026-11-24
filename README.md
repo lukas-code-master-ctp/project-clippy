@@ -29,6 +29,10 @@ Cada cambio en `main` compila el instalador en GitHub Actions. Entra a la pesta�
 
 Como el instalador todavía no está firmado, Windows SmartScreen puede advertir al abrirlo: elige "Más información" y luego "Ejecutar de todas formas".
 
+## Actualizaciones automáticas
+
+Cada merge a `main` publica una versión firmada en Releases y Brote se actualiza solo. Configuración y detalles en [docs/actualizaciones.md](docs/actualizaciones.md).
+
 ## Logs (diagnóstico)
 
 Brote guarda un registro local con pasos, tiempos y errores. No sale del computador y no incluye keys, tokens, lo que dices ni el contenido de correos o eventos.

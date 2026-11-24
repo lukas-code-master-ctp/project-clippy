@@ -83,6 +83,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ4Qzg0NzJDOTU4MTJGRkUKUldUK0w0R1ZMRWZJMkk1OGlOanpXaWliWWxUREFWZXg1YlRBRzJoVmJwSFB0T1kvSjNuRjFoTG4K",
+      "endpoints": [
+        "https://github.com/lukas-code-master-ctp/project-clippy/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

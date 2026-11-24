@@ -1,0 +1,83 @@
+name: Publicar versión
+
+# Cada merge a main publica una versión firmada en Releases.
+# Brote la detecta sola (latest.json) y se actualiza sin que bajes nada.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # whisper.cpp se compila para CPUs x86 de 2013 en adelante (AVX2), no solo para la del servidor de CI.
+  GGML_NATIVE: "OFF"
+  GGML_AVX: "ON"
+  GGML_AVX2: "ON"
+  GGML_FMA: "ON"
+  GGML_F16C: "ON"
+  # Versión 0.2.N, donde N sube en cada publicación.
+  VERSION: 0.2.${{ github.run_number }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+    steps:
+      - name: Revisar la llave de firma
+        shell: bash
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Falta el secret TAURI_SIGNING_PRIVATE_KEY (ver docs/actualizaciones.md)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ggml-portable-v1
+
+      - run: npm ci
+
+      - name: Compilar y firmar
+        shell: bash
+        run: |
+          echo "{\"version\":\"$VERSION\",\"bundle\":{\"createUpdaterArtifacts\":true}}" > release.conf.json
+          npm run tauri build -- --config release.conf.json
+
+      - name: Armar latest.json
+        shell: bash
+        run: node scripts/latest-json.mjs "$VERSION" "https://github.com/${{ github.repository }}/releases/download/v$VERSION"
+
+      - name: Publicar en Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Brote $VERSION" \
+            --notes "Versión automática desde ${{ github.sha }}." \
+            --latest \
+            src-tauri/target/release/bundle/nsis/*-setup.exe \
+            src-tauri/target/release/bundle/nsis/*-setup.exe.sig \
+            src-tauri/target/release/bundle/msi/*.msi \
+            src-tauri/target/release/bundle/msi/*.msi.sig \
+            latest.json
