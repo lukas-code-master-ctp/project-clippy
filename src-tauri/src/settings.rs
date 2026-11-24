@@ -18,11 +18,15 @@ pub const DEFAULT_MODEL: &str = "anthropic/claude-haiku-4.5";
 pub struct Settings {
     /// Id del modelo en OpenRouter.
     pub model: String,
+    /// Client ID de la app de escritorio en Google Cloud (el secret va al llavero).
+    pub google_client_id: String,
+    /// Cuenta de Google conectada, para mostrarla en Ajustes.
+    pub google_email: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { model: DEFAULT_MODEL.into() }
+        Self { model: DEFAULT_MODEL.into(), google_client_id: String::new(), google_email: String::new() }
     }
 }
 
@@ -43,6 +47,13 @@ pub fn load(app: &AppHandle) -> Settings {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+/// Cambia algunos campos y guarda.
+pub fn update(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Result<()> {
+    let mut settings = load(app);
+    change(&mut settings);
+    save(app, &settings)
 }
 
 fn save(app: &AppHandle, settings: &Settings) -> Result<()> {
@@ -93,8 +104,7 @@ pub fn get_settings(app: AppHandle) -> SettingsView {
 #[tauri::command]
 pub fn save_settings(app: AppHandle, model: String, api_key: Option<String>) -> Result<SettingsView, String> {
     let model = model.trim();
-    let settings = Settings { model: if model.is_empty() { DEFAULT_MODEL.into() } else { model.into() } };
-    save(&app, &settings).map_err(|e| format!("{e:#}"))?;
+    update(&app, |s| s.model = if model.is_empty() { DEFAULT_MODEL.into() } else { model.into() }).map_err(|e| format!("{e:#}"))?;
     match api_key.as_deref().map(str::trim) {
         None => {}
         Some("") => clear_api_key().map_err(|e| format!("{e:#}"))?,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import GoogleSettings from "./GoogleSettings";
 
 interface SettingsView {
   model: string;
@@ -54,6 +55,7 @@ export default function Settings() {
   return (
     <main className="settings">
       <h1>Ajustes de Brote</h1>
+      <h2>Modelo de IA (OpenRouter)</h2>
 
       <section>
         <label htmlFor="key">API key de OpenRouter</label>
@@ -103,6 +105,8 @@ export default function Settings() {
           {status.text}
         </p>
       )}
+
+      <GoogleSettings />
     </main>
   );
 }
