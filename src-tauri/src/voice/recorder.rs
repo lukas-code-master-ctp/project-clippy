@@ -101,6 +101,7 @@ fn open_stream() -> Result<Opened> {
         other => return Err(anyhow!("formato de audio no soportado: {other:?}")),
     };
     stream.play().context("no pude iniciar la grabación")?;
+    log::info!("Micrófono: {} Hz, {channels} canal(es), {format:?}", rate);
     Ok((stream, buffer, rate, channels))
 }
 
@@ -116,7 +117,7 @@ where
                 buf.extend(data.iter().map(|s| <f32 as FromSample<T>>::from_sample_(*s)));
             }
         },
-        |err| eprintln!("Error en el stream de audio: {err}"),
+        |err| log::error!("Error en el stream de audio: {err}"),
         None,
     )?;
     Ok(stream)

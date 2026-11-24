@@ -29,6 +29,16 @@ Cada cambio en `main` compila el instalador en GitHub Actions. Entra a la pesta�
 
 Como el instalador todavía no está firmado, Windows SmartScreen puede advertir al abrirlo: elige "Más información" y luego "Ejecutar de todas formas".
 
+## Logs (diagnóstico)
+
+Brote guarda un registro local con pasos, tiempos y errores. No sale del computador y no incluye keys, tokens, lo que dices ni el contenido de correos o eventos.
+
+- Windows: `%LOCALAPPDATA%\cl.brote.app\logs\brote.log`
+- macOS: `~/Library/Logs/cl.brote.app/brote.log`
+- Linux: `~/.local/share/cl.brote.app/logs/brote.log`
+
+Se abre desde Ajustes, "Abrir carpeta de logs". Rota a 1 MB y guarda los 4 archivos anteriores.
+
 ## Requisitos
 
 - [Node.js](https://nodejs.org) 20 o superior

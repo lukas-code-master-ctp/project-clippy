@@ -116,6 +116,7 @@ impl GoogleAuth {
         let verifier = random_string(64);
         let state = random_string(24);
         let url = auth_url(&client.client_id, &redirect_uri, &pkce_challenge(&verifier), &state);
+        log::info!("Google: abriendo el navegador para conectar");
         open_browser(&url)?;
 
         let expected_state = state.clone();
@@ -137,13 +138,14 @@ impl GoogleAuth {
             .send()
             .await
             .context("no pude conectarme con Google")?;
-        let tokens = parse_token_response(response).await?;
+        let tokens = parse_token_response(response).await.inspect_err(|e| log::error!("Google: no se pudo canjear el código: {e}"))?;
         let refresh = tokens.refresh_token.clone().ok_or_else(|| anyhow!("Google no entregó un token de acceso permanente"))?;
 
         let email = fetch_email(&http, &tokens.access_token).await.unwrap_or_default();
         keyring_set(KEY_REFRESH, &refresh)?;
         *self.refresh.lock().unwrap() = Some(refresh);
         *self.access.lock().unwrap() = Some((tokens.access_token, Instant::now() + Duration::from_secs(tokens.expires_in)));
+        log::info!("Google: conectado");
         Ok(ConnectResult { email })
     }
 
@@ -170,11 +172,16 @@ impl GoogleAuth {
             Ok(t) => t,
             Err(e) if format!("{e}").contains("invalid_grant") => {
                 // El usuario revocó el acceso o el token venció: hay que volver a conectar.
+                log::warn!("Google: el permiso venció o fue revocado (invalid_grant)");
                 self.forget();
                 bail!("Google no está conectado: el permiso venció, hay que volver a conectarlo en Ajustes");
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                log::error!("Google: no se pudo renovar el acceso: {e}");
+                return Err(e);
+            }
         };
+        log::info!("Google: acceso renovado");
         *self.access.lock().unwrap() = Some((tokens.access_token.clone(), Instant::now() + Duration::from_secs(tokens.expires_in)));
         Ok(tokens.access_token)
     }
@@ -186,6 +193,7 @@ impl GoogleAuth {
             let _ = reqwest::Client::new().post(REVOKE_URL).form(&[("token", token.as_str())]).send().await;
         }
         self.forget();
+        log::info!("Google: desconectado");
     }
 
     fn forget(&self) {

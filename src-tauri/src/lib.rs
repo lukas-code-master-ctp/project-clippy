@@ -1,6 +1,7 @@
 mod agent;
 mod bubble;
 mod google;
+mod logs;
 mod pet;
 mod settings;
 mod voice;
@@ -95,6 +96,7 @@ fn stop_running_agent(app: &AppHandle) -> bool {
     confirm::hide(app);
     match app.state::<AgentTask>().0.lock().unwrap().take() {
         Some(task) => {
+            log::info!("Agente detenido");
             task.abort();
             true
         }
@@ -127,6 +129,7 @@ fn friendly_agent_error(e: &anyhow::Error, model: &str) -> String {
 /// Manda el comando al agente. Lo que se oyó queda en el globo mientras piensa.
 fn start_agent(app: &AppHandle, text: String) {
     let Some(key) = settings::api_key() else {
+        log::warn!("Falta la API key de OpenRouter");
         bubble::show(
             app,
             "Para ayudarte necesito tu API key de OpenRouter. Te abro los ajustes.",
@@ -158,8 +161,9 @@ fn start_agent(app: &AppHandle, text: String) {
             Some((at, messages)) if at.elapsed() < CONVERSATION_TTL => messages,
             _ => vec![],
         };
+        log::info!("Agente: modelo {model}, {} mensajes previos", history.len());
         let result = agent::run(&llm, &registry, &confirmer, history, &text).await;
-        eprintln!("Agente: {:.2} s", started.elapsed().as_secs_f32());
+        log::info!("Agente terminó en {:.2} s", started.elapsed().as_secs_f32());
         app.state::<AgentTask>().0.lock().unwrap().take();
         match result {
             Ok(outcome) if !outcome.reply.is_empty() => {
@@ -170,11 +174,12 @@ fn start_agent(app: &AppHandle, text: String) {
                 sleep_after(&app, generation, Duration::from_secs(3));
             }
             Ok(_) => {
+                log::warn!("El agente no devolvió texto");
                 bubble::hide(&app);
                 pet::set(&app, PetState::Sleeping);
             }
             Err(e) => {
-                eprintln!("Agente: {e:#}");
+                log::error!("Agente: {e:#}");
                 bubble::show(&app, &friendly_agent_error(&e, &model), BubbleKind::Error, Some(Duration::from_secs(8)));
                 pet::set(&app, PetState::Sleeping);
             }
@@ -235,11 +240,13 @@ fn on_talk_pressed(app: &AppHandle) {
     match model::status(app) {
         ModelStatus::Ready => {}
         ModelStatus::Downloading { percent } => {
+            log::info!("Tecla presionada pero el modelo va en {percent}%");
             let msg = format!("Todavía estoy bajando mi modelo de voz ({percent}%). Dame un momento.");
             bubble::show(app, &msg, BubbleKind::Info, Some(Duration::from_secs(4)));
             return;
         }
         ModelStatus::Failed { .. } | ModelStatus::Missing => {
+            log::warn!("Tecla presionada sin modelo de voz; reintento la descarga");
             bubble::show(app, "No tengo el modelo de voz. Lo intento bajar de nuevo.", BubbleKind::Error, Some(Duration::from_secs(5)));
             start_model_download(app.clone());
             return;
@@ -247,11 +254,12 @@ fn on_talk_pressed(app: &AppHandle) {
     }
     match recorder.start() {
         Ok(()) => {
+            log::info!("Escuchando");
             bubble::hide(app);
             pet::set(app, PetState::Listening);
         }
         Err(e) => {
-            eprintln!("Micrófono: {e:#}");
+            log::error!("Micrófono: {e:#}");
             bubble::show(
                 app,
                 "No pude usar el micrófono. Revisa que esté conectado y que el sistema le dé permiso a Brote.",
@@ -272,13 +280,15 @@ fn on_talk_released(app: &AppHandle) {
     let audio = match recorder.stop() {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("Grabación: {e:#}");
+            log::error!("Grabación: {e:#}");
             bubble::show(app, "Se cortó la grabación. ¿Lo intentamos de nuevo?", BubbleKind::Error, Some(Duration::from_secs(6)));
             pet::set(app, PetState::Sleeping);
             return;
         }
     };
+    log::info!("Grabación detenida: {:.1} s", audio.len() as f32 / 16_000.0);
     if audio.len() < voice::MIN_SPEECH_SAMPLES {
+        log::info!("Muy corta, se ignora");
         pet::set(app, PetState::Sleeping);
         return;
     }
@@ -287,15 +297,20 @@ fn on_talk_released(app: &AppHandle) {
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
         let result = model::model_path(&app).and_then(|path| app.state::<Transcriber>().transcribe(&path, &audio));
-        eprintln!("Transcripción de {:.1} s de audio en {:.2} s", audio.len() as f32 / 16_000.0, started.elapsed().as_secs_f32());
+        log::info!("Transcripción de {:.1} s de audio en {:.2} s", audio.len() as f32 / 16_000.0, started.elapsed().as_secs_f32());
         match result {
             Ok(text) if text.is_empty() => {
+                log::info!("Transcripción vacía");
                 bubble::show(&app, "No te escuché bien. ¿Me lo repites?", BubbleKind::Info, Some(Duration::from_secs(4)));
                 pet::set(&app, PetState::Sleeping);
             }
-            Ok(text) => start_agent(&app, text),
+            Ok(text) => {
+                // Solo el largo: lo que dijiste no queda en el log.
+                log::info!("Transcripción lista ({} caracteres)", text.chars().count());
+                start_agent(&app, text)
+            }
             Err(e) => {
-                eprintln!("Whisper: {e:#}");
+                log::error!("Whisper: {e:#}");
                 bubble::show(&app, "No pude entender el audio. ¿Me lo repites?", BubbleKind::Error, Some(Duration::from_secs(6)));
                 pet::set(&app, PetState::Sleeping);
             }
@@ -311,22 +326,25 @@ fn start_model_download(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let was_missing = !matches!(model::model_path(&app).map(|p| p.exists()), Ok(true));
         if was_missing {
+            log::info!("Bajando el modelo de voz");
             bubble::show(&app, "Estoy bajando mi modelo de voz (unos 190 MB). Es solo la primera vez.", BubbleKind::Info, Some(Duration::from_secs(6)));
         }
         let progress_app = app.clone();
         let result = model::ensure_model(app.clone(), move |p| {
             if p % 25 == 0 && p < 100 {
+                log::info!("Modelo de voz: {p}%");
                 bubble::show(&progress_app, &format!("Bajando modelo de voz: {p}%"), BubbleKind::Info, Some(Duration::from_secs(3)));
             }
         })
         .await;
         match result {
             Ok(path) => {
+                log::info!("Modelo de voz listo");
                 // Cargarlo ahora evita que la primera transcripción tarde más.
                 let load_app = app.clone();
                 std::thread::spawn(move || {
                     if let Err(e) = load_app.state::<Transcriber>().load(&path) {
-                        eprintln!("Whisper: {e:#}");
+                        log::error!("Whisper al cargar: {e:#}");
                     }
                 });
                 if was_missing {
@@ -334,7 +352,7 @@ fn start_model_download(app: AppHandle) {
                 }
             }
             Err(e) => {
-                eprintln!("Modelo: {e:#}");
+                log::error!("Modelo de voz: {e:#}");
                 bubble::show(
                     &app,
                     "No pude bajar mi modelo de voz. Revisa tu conexión; lo intento de nuevo cuando me hables.",
@@ -393,6 +411,7 @@ pub fn run() {
         .manage(AgentTask::default())
         .manage(Conversation::default())
         .manage(std::sync::Arc::new(google::auth::GoogleAuth::default()))
+        .plugin(logs::plugin())
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -408,8 +427,9 @@ pub fn run() {
                 .build(),
         )
         .setup(move |app| {
+            logs::startup(app.handle());
             if let Err(e) = app.global_shortcut().register(talk_key) {
-                eprintln!("No se pudo registrar Ctrl+Shift+Espacio: {e}");
+                log::error!("No se pudo registrar Ctrl+Shift+Espacio: {e}");
             }
             build_tray(app.handle())?;
             // Lee las credenciales una vez al arrancar, en el hilo principal.
@@ -464,6 +484,7 @@ pub fn run() {
             google::google_save_client,
             google::google_connect,
             google::google_disconnect,
+            logs::open_log_dir,
             get_state,
             set_state,
             cycle_state,

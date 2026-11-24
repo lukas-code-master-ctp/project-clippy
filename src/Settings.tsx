@@ -107,6 +107,19 @@ export default function Settings() {
       )}
 
       <GoogleSettings />
+
+      <h2>Diagnóstico</h2>
+      <section>
+        <p className="hint">
+          Brote guarda un registro de lo que hace (pasos, tiempos y errores) solo en este computador. No incluye tus
+          keys, lo que dices ni el contenido de tus correos. Si algo falla, este archivo ayuda a encontrar la causa.
+        </p>
+        <div className="settings-actions">
+          <button className="btn btn-secondary" onClick={() => invoke("open_log_dir").catch(() => {})}>
+            Abrir carpeta de logs
+          </button>
+        </div>
+      </section>
     </main>
   );
 }
