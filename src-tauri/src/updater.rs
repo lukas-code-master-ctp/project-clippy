@@ -50,7 +50,11 @@ async fn check_and_install(app: &AppHandle, manual: bool) -> Result<String> {
             tokio::time::sleep(IDLE_POLL).await;
         }
     }
-    log::info!("Actualización: instalando {version}");
+    log::info!(
+        "Actualización: instalando {version} (instalado como {:?}, ejecutable {:?})",
+        tauri::utils::platform::bundle_type(),
+        std::env::current_exe().ok()
+    );
     bubble::show(app, &format!("Me actualizo a la versión {version}. Vuelvo en un momento."), BubbleKind::Info, None);
     tokio::time::sleep(Duration::from_secs(2)).await;
     // En Windows el instalador cierra Brote, lo actualiza y lo vuelve a abrir.
