@@ -78,8 +78,10 @@ pub async fn run(
     messages.push(Message::user(user_text));
     let specs = registry.specs();
 
-    for _ in 0..MAX_STEPS {
+    for step in 1..=MAX_STEPS {
         let reply = llm.chat(&messages, &specs).await?;
+        let names: Vec<&str> = reply.tool_calls.iter().map(|c| c.function.name.as_str()).collect();
+        log::info!("Paso {step}: {}", if names.is_empty() { "respuesta final".to_string() } else { format!("herramientas {names:?}") });
         if reply.tool_calls.is_empty() {
             let text = reply.content.clone().unwrap_or_default().trim().to_string();
             messages.push(reply);
@@ -93,29 +95,42 @@ pub async fn run(
             messages.push(Message::tool(&call.id, result));
         }
     }
+    log::warn!("El agente llegó al máximo de {MAX_STEPS} pasos");
     Err(anyhow!("el plan tomó demasiados pasos y lo detuve"))
 }
 
 /// Ejecuta una llamada. Los errores vuelven al modelo como texto, para que pueda explicarlos.
 async fn execute(registry: &Registry, confirmer: &impl Confirmer, call: &ToolCall) -> String {
     let Some(tool) = registry.get(&call.function.name) else {
+        log::warn!("El modelo pidió una herramienta que no existe: {}", call.function.name);
         return format!("Error: no existe la herramienta {}", call.function.name);
     };
     let raw = if call.function.arguments.trim().is_empty() { "{}" } else { &call.function.arguments };
     let args: Value = match serde_json::from_str(raw) {
         Ok(v) => v,
-        Err(_) => return "Error: los argumentos no son JSON válido".into(),
+        Err(_) => {
+            log::warn!("{}: argumentos no son JSON válido", tool.name);
+            return "Error: los argumentos no son JSON válido".into();
+        }
     };
     let outcome = match &tool.runner {
         Runner::Read(run) => run(args).await,
         Runner::Sensitive { card, run } => {
             let shown = match card(args.clone()).await {
                 Ok(c) => c,
-                Err(e) => return format!("Error: {e}"),
+                Err(e) => {
+                    log::warn!("{}: no se pudo armar la tarjeta: {e}", tool.name);
+                    return format!("Error: {e}");
+                }
             };
             let Some((approval, edits)) = confirmer.confirm(tool.name, &shown).await else {
+                log::info!("{}: el usuario no confirmó", tool.name);
                 return "El usuario no confirmó. No se hizo nada.".into();
             };
+            // Solo los nombres de los campos editados, no su contenido.
+            let mut edited: Vec<&str> = edits.keys().map(String::as_str).collect();
+            edited.sort();
+            log::info!("{}: confirmado{}", tool.name, if edited.is_empty() { String::new() } else { format!(", con cambios en {edited:?}") });
             let args = apply_edits(args, &shown, &edits);
             if !edits.is_empty() {
                 // Lo editado se valida igual que lo original antes de ejecutarse.
@@ -127,8 +142,14 @@ async fn execute(registry: &Registry, confirmer: &impl Confirmer, call: &ToolCal
         }
     };
     match outcome {
-        Ok(text) => text,
-        Err(e) => format!("Error: {e}"),
+        Ok(text) => {
+            log::info!("{}: ok", tool.name);
+            text
+        }
+        Err(e) => {
+            log::warn!("{}: {e:#}", tool.name);
+            format!("Error: {e}")
+        }
     }
 }
 

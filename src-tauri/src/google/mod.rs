@@ -65,7 +65,10 @@ pub async fn google_connect(app: AppHandle) -> Result<GoogleStatus, String> {
     let result = auth
         .connect(&client, |url| opener.opener().open_url(url, None::<&str>).map_err(|e| anyhow::anyhow!("no pude abrir el navegador: {e}")))
         .await
-        .map_err(|e| format!("{e:#}"))?;
+        .map_err(|e| {
+            log::error!("Google: no se pudo conectar: {e:#}");
+            format!("{e:#}")
+        })?;
     crate::settings::update(&app, |s| s.google_email = result.email.clone()).map_err(|e| format!("{e:#}"))?;
     Ok(google_status(app))
 }

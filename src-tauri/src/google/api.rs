@@ -30,8 +30,12 @@ impl Api {
 
     async fn send(&self, build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder) -> Result<Value> {
         let token = self.token().await?;
-        let response = build(&self.http).bearer_auth(token).send().await.context("no pude conectarme con Google")?;
+        let started = std::time::Instant::now();
+        let request = build(&self.http).bearer_auth(token).build().context("pedido a Google inválido")?;
+        let what = format!("{} {}", request.method(), crate::logs::path_only(request.url().as_str()));
+        let response = self.http.execute(request).await.map_err(|e| e.without_url()).inspect_err(|e| log::error!("Google sin conexión ({what}): {e}")).context("no pude conectarme con Google")?;
         let status = response.status();
+        log::info!("Google {what}: {status} en {:.2} s", started.elapsed().as_secs_f32());
         let text = response.text().await.unwrap_or_default();
         if status.is_success() {
             if text.trim().is_empty() {

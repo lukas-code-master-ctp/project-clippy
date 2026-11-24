@@ -118,5 +118,9 @@ pub fn save_settings(app: AppHandle, model: String, api_key: Option<String>) -> 
 pub async fn test_connection(app: AppHandle) -> Result<String, String> {
     let key = api_key().ok_or("Todavía no guardas una API key.")?;
     let model = load(&app).model;
-    crate::agent::openrouter::ping(&key, &model).await.map_err(|e| format!("{e:#}"))
+    log::info!("Probando OpenRouter con el modelo {model}");
+    crate::agent::openrouter::ping(&key, &model).await.map_err(|e| {
+        log::error!("Prueba de OpenRouter: {e:#}");
+        format!("{e:#}")
+    })
 }

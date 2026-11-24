@@ -84,6 +84,7 @@ pub async fn chat(key: &str, model: &str, messages: &[Message], tools: &[Value])
     if !tools.is_empty() {
         body["tools"] = Value::Array(tools.to_vec());
     }
+    let started = std::time::Instant::now();
     let response = client()?
         .post(std::env::var("BROTE_OPENROUTER_URL").unwrap_or_else(|_| URL.into()))
         .bearer_auth(key)
@@ -91,9 +92,12 @@ pub async fn chat(key: &str, model: &str, messages: &[Message], tools: &[Value])
         .json(&body)
         .send()
         .await
+        .map_err(|e| e.without_url())
+        .inspect_err(|e| log::error!("OpenRouter sin conexión: {e}"))
         .context("no pude conectarme con OpenRouter")?;
     let status = response.status();
     let text = response.text().await.context("OpenRouter cortó la respuesta")?;
+    log::info!("OpenRouter {model}: {status} en {:.2} s", started.elapsed().as_secs_f32());
     let parsed: Response = serde_json::from_str(&text).map_err(|_| anyhow!("OpenRouter respondió {status}: {}", truncate(&text)))?;
     if let Some(err) = parsed.error {
         return Err(anyhow!("OpenRouter respondió {status}: {}", err.message));
