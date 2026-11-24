@@ -8,6 +8,7 @@ use crate::bubble::{self, BubbleKind};
 use anyhow::{Context, Result};
 use std::time::Duration;
 use tauri::AppHandle;
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 
 /// Espera antes de la primera revisión, para no competir con el arranque.
@@ -58,8 +59,25 @@ async fn check_and_install(app: &AppHandle, manual: bool) -> Result<String> {
     bubble::show(app, &format!("Me actualizo a la versión {version}. Vuelvo en un momento."), BubbleKind::Info, None);
     tokio::time::sleep(Duration::from_secs(2)).await;
     // En Windows el instalador cierra Brote, lo actualiza y lo vuelve a abrir.
-    update.install(bytes).context("no pude instalar la versión nueva")?;
+    if let Err(e) = update.install(bytes) {
+        // Pasa por ejemplo si el antivirus bloquea el instalador recién bajado (no está firmado
+        // con un certificado de Windows). Bajarlo desde el navegador sí funciona.
+        log::warn!("Actualización: el instalador no se pudo lanzar ({e}); abro la descarga en el navegador");
+        bubble::show(
+            app,
+            &format!("No pude instalar la versión {version} sola. Te abro la descarga: ejecútala y listo."),
+            BubbleKind::Info,
+            Some(Duration::from_secs(10)),
+        );
+        let _ = app.opener().open_url(download_url(&version), None::<&str>);
+        anyhow::bail!("no pude lanzar el instalador ({e}); abrí la descarga en el navegador");
+    }
     app.restart();
+}
+
+/// El instalador de una versión publicada en Releases (ver release.yml).
+fn download_url(version: &str) -> String {
+    format!("https://github.com/lukas-code-master-ctp/project-clippy/releases/download/v{version}/Brote_{version}_x64-setup.exe")
 }
 
 #[tauri::command]
