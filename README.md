@@ -6,7 +6,7 @@ Mascota de escritorio con comandos de voz. App de escritorio hecha con Tauri 2 (
 
 - Brote flota en una ventana transparente, sin bordes y siempre encima de las demás apps. Aparece en la esquina inferior derecha y no roba el foco.
 - **Arrastrar** a Brote lo mueve por la pantalla.
-- **Mantener apretado** a Brote con el mouse (sin moverlo): escucha mientras lo mantienes, igual que Ctrl+Shift+Espacio.
+- **Mantener apretado** a Canela con el mouse (sin moverlo): escucha mientras lo mantienes, igual que Ctrl+Shift+Espacio.
 - **Doble clic**: abre una caja para escribirle la orden en vez de hablar. Enter envía, Esc cierra.
 - **Un clic**: cosquillas.
 - **Arrastrar** lo mueve (si el mouse se mueve antes de 0,4 s es arrastre, no habla).
@@ -31,6 +31,10 @@ El núcleo en Rust es la fuente de verdad del estado (`src-tauri/src/pet.rs`). L
 Cada cambio en `main` compila el instalador en GitHub Actions. Entra a la pestaña **Actions** del repo, abre la última ejecución de "Instalador de Windows" y descarga el artefacto `brote-windows`. Trae un `.exe` (instalador) y un `.msi`.
 
 Como el instalador todavía no está firmado, Windows SmartScreen puede advertir al abrirlo: elige "Más información" y luego "Ejecutar de todas formas".
+
+## Mascota
+
+La mascota es **Canela**, una perrita en pixel art (`src/canela.svg`, 24x21 pixeles, dibujada a 96 px de ancho para que se vea nítida). Tiene los mismos estados que antes: durmiendo, escuchando, pensando, trabajando y listo.
 
 ## Actualizaciones automáticas
 

@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
 /// Cuánto se mete el globo en la ventana de Brote, en píxeles lógicos.
 /// La parte de arriba de esa ventana es aire (Brote empieza más abajo), así que
 /// sin este solape el globo quedaría flotando lejos de él.
-const OVERLAP: f64 = 40.0;
+const OVERLAP: f64 = 10.0;
 /// Tamaño lógico de la ventana del globo (igual que en tauri.conf.json).
 const BUBBLE_W: f64 = 280.0;
 const BUBBLE_H: f64 = 200.0;

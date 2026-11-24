@@ -30,7 +30,7 @@ use voice::transcriber::Transcriber;
 /// Margen respecto al borde de la pantalla al aparecer.
 const SCREEN_MARGIN: f64 = 24.0;
 /// Tamaño lógico de la ventana (igual que en tauri.conf.json).
-const PET_SIZE: f64 = 200.0;
+const PET_SIZE: f64 = 120.0;
 /// El comando que el agente está ejecutando, para poder detenerlo.
 #[derive(Default)]
 struct AgentTask(Mutex<Option<tauri::async_runtime::JoinHandle<()>>>);

@@ -15,9 +15,9 @@
     "windows": [
       {
         "label": "pet",
-        "title": "Brote",
-        "width": 200,
-        "height": 200,
+        "title": "Canela",
+        "width": 120,
+        "height": 120,
         "resizable": false,
         "decorations": false,
         "transparent": true,
