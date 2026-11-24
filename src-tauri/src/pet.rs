@@ -15,45 +15,6 @@ pub enum PetState {
     Done,
 }
 
-impl PetState {
-    pub const ALL: [PetState; 5] = [
-        PetState::Sleeping,
-        PetState::Listening,
-        PetState::Thinking,
-        PetState::Working,
-        PetState::Done,
-    ];
-
-    pub fn next(self) -> Self {
-        let i = Self::ALL.iter().position(|s| *s == self).unwrap_or(0);
-        Self::ALL[(i + 1) % Self::ALL.len()]
-    }
-
-    pub fn id(self) -> &'static str {
-        match self {
-            PetState::Sleeping => "sleeping",
-            PetState::Listening => "listening",
-            PetState::Thinking => "thinking",
-            PetState::Working => "working",
-            PetState::Done => "done",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            PetState::Sleeping => "Durmiendo",
-            PetState::Listening => "Escuchando",
-            PetState::Thinking => "Pensando",
-            PetState::Working => "Trabajando",
-            PetState::Done => "Listo",
-        }
-    }
-
-    pub fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.iter().copied().find(|s| s.id() == id)
-    }
-}
-
 /// Estado compartido. `generation` sube en cada cambio, para que una secuencia
 /// automática (la demo de la tecla) sepa si alguien la interrumpió.
 pub struct Pet {
